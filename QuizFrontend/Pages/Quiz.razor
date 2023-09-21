@@ -1,0 +1,84 @@
+@using QuizApplication.Data
+@using Microsoft.AspNetCore.SignalR.Client
+@using System.Data
+@implements IAsyncDisposable
+
+<div class="quiz">
+    @if (Question is not null)
+    {
+        <h3 class="prompt">@Question.Prompt</h3>
+        <div class="choices">
+            @foreach (var choice in Question.Choices)
+            {
+                <button>@choice</button><br>
+            }
+        </div>
+    }
+</div>
+
+
+
+@code {
+
+    private HubConnection Connection { get; set; }
+
+    private Question? Question { get; set; } 
+
+    public Quiz()
+    {
+        // Question = new Question(-1, "A?", "c","abcdef".ToCharArray().Select(c => $"{c}").ToList());
+
+        Connection = new HubConnectionBuilder()
+            .WithUrl("http://localhost:5062/quiz", options =>
+            {
+                options.HttpMessageHandlerFactory = innerHandler => new IncludeRequestCredentialsMessageHandler { InnerHandler = innerHandler };
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        Connection.On("ReceiveQuestion", (Question question) =>
+        {
+            Console.WriteLine(question);
+            Question = question;
+            StateHasChanged();
+        });
+    }
+
+    private HubConnection InitConnection()
+    {
+        var connection = new HubConnectionBuilder()
+            .WithUrl("http://localhost:5062/quiz", options =>
+            {
+                options.HttpMessageHandlerFactory = innerHandler => new IncludeRequestCredentialsMessageHandler { InnerHandler = innerHandler };
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        connection.On("ReceiveQuestion", (Question question) => Update(() => Question = question));
+        return connection;
+    }
+
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        Connection = InitConnection();
+        await Connection.StartAsync();
+        await RequestQuestion(1);
+    }
+    
+    private Task RequestQuestion(int identifier)
+    {
+        Console.WriteLine(identifier);
+        return Connection?.SendAsync("GetQuestion", identifier) ?? Task.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync() => Connection?.DisposeAsync() ?? ValueTask.CompletedTask;
+
+    public void Update(Action action)
+    {
+        action();
+        StateHasChanged();
+    }
+
+}
